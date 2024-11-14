@@ -1,8 +1,7 @@
-// src/ViewJobPosting.js
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import './ViewJobPosting.css';
-import './JobDetailView.css'; // Import the CSS for the detailed view
+import JobDetailView from './JobDetailView';
 
 function ViewJobPosting() {
     const [jobs, setJobs] = useState([]);
@@ -15,8 +14,9 @@ function ViewJobPosting() {
 
     useEffect(() => {
         // Fetch all job postings
-        axios.get('http://localhost:8081/api/job-postings')
+        axios.get('http://localhost:8081/api/job_postings')
             .then(response => {
+                console.log(response.data); // Check job data here
                 setJobs(response.data);
                 setLoading(false);
             })
@@ -29,12 +29,12 @@ function ViewJobPosting() {
 
     const handleJobClick = (job) => {
         setSelectedJob(job);
-        fetchJobDetails(job.id);
+        fetchJobDetails(job.job_id); // Updated from job.id to job.job_id
     };
 
-    const fetchJobDetails = (id) => {
+    const fetchJobDetails = (job_id) => {  // Updated parameter name from id to job_id
         setDetailsLoading(true);
-        axios.get(`http://localhost:8081/api/job-postings/${id}`)
+        axios.get(`http://localhost:8081/api/job_postings/${job_id}`)  // Updated from id to job_id
             .then(response => {
                 setJobDetails(response.data);
                 setDetailsLoading(false);
@@ -52,45 +52,17 @@ function ViewJobPosting() {
         setDetailsError(null);
     };
 
-    const formatDate = (dateString) => {
-        if (!dateString) return 'N/A';
-        const date = new Date(dateString);
-        return date.toISOString().split('T')[0]; // This will give you "yyyy-mm-dd"
-    };
-
     if (loading) return <div>Loading job postings...</div>;
     if (error) return <div>{error}</div>;
 
     if (selectedJob && jobDetails) {
-        if (detailsLoading) return <div>Loading job details...</div>;
-        if (detailsError) return <div>{detailsError}</div>;
-
         return (
-            <div className="job-detail-view">
-                <button onClick={handleBack} className="back-button">&lt; Back to search results</button>
-                <h2>{jobDetails.name}</h2>
-                <div className="login-prompt">
-                    Please <a href="/login">login</a> or <a href="/register">register</a> as a jobseeker to apply for this job.
-                </div>
-                <div className="job-metadata">
-                    <div>
-                        <h4>Type of Work</h4>
-                        <p>{jobDetails.typeOfWork || 'Full Time'}</p>
-                    </div>
-                    <div>
-                        <h4>Salary</h4>
-                        <p>${jobDetails.salary}</p>
-                    </div>
-                    <div>
-                        <h4>Date Posted</h4>
-                        <p>{formatDate(jobDetails.datePosted)}</p>
-                    </div>
-                </div>
-                <div className="job-overview">
-                    <h3>Job Overview</h3>
-                    <p>{jobDetails.jobOverview}</p>
-                </div>
-            </div>
+            <JobDetailView 
+                jobDetails={jobDetails} 
+                onBack={handleBack} 
+                detailsLoading={detailsLoading} 
+                detailsError={detailsError} 
+            />
         );
     }
 
@@ -99,9 +71,9 @@ function ViewJobPosting() {
             <h2>Job Postings</h2>
             <ul>
                 {jobs.map(job => (
-                    <li key={job.id} onClick={() => handleJobClick(job)} className="job-card">
+                    <li key={job.job_id} onClick={() => handleJobClick(job)} className="job-card"> {/* Updated from job.id to job.job_id */}
                         <div className="job-metadata">
-                            <h3>{job.name}</h3>
+                            <h3>{job.jobName || "Job Title Not Available"}</h3>
                             <span>{job.typeOfWork || 'Full Time'}</span>
                         </div>
                         <p className="job-description">{job.description}</p>

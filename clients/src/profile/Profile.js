@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const Profile = () => {
-  const { id, accountType } = useParams(); // Extract both id and accountType
+  const { id, accountType } = useParams(); // Extract both id and accountType from route params
   const navigate = useNavigate();
   const [profileData, setProfileData] = useState(null);
   const [error, setError] = useState(null);
@@ -23,9 +23,10 @@ const Profile = () => {
     companyName: '', // Field for company name if profile is an employer
   });
 
+  // Fetch profile data based on account type (employee or employer)
   const fetchProfile = useCallback(() => {
-    const url = `http://localhost:8081/api/users/${id}`;
-    
+    const url = `http://localhost:8081/api/users/${id}`; // Use unified endpoint
+
     axios.get(url)
       .then(response => {
         setProfileData(response.data);
@@ -48,7 +49,7 @@ const Profile = () => {
         console.error('Error fetching profile data:', error);
         setError('Error fetching profile data');
       });
-  }, [id]);
+  }, [id, accountType]);
 
   useEffect(() => {
     if (!id || !accountType) {
@@ -86,7 +87,6 @@ const Profile = () => {
         if (updatedData[key]) {
           formData.append(key, updatedData[key]);
         } else {
-          // If no new file, append null to retain old file in the database
           formData.append(key, null);
         }
       } else {
@@ -94,7 +94,8 @@ const Profile = () => {
       }
     });
   
-    const url = `http://localhost:8081/api/${accountType.toLowerCase()}s/${id}`;
+    const url = `http://localhost:8081/api/users/${id}`; // Unified endpoint for updates
+  
     axios.put(url, formData)
       .then(() => {
         fetchProfile(); // Fetch updated profile data
@@ -106,26 +107,25 @@ const Profile = () => {
       });
   };
   
-
+  
   const handleDelete = () => {
     if (window.confirm("Are you sure you want to delete this profile? This action cannot be undone.")) {
-      // Adjust API endpoint based on accountType
-      const url = `http://localhost:8081/api/${accountType.toLowerCase()}s/${id}`; 
-      
+      const url = accountType === 'employer' 
+        ? `http://localhost:8081/api/employers/${id}`
+        : `http://localhost:8081/api/employees/${id}`;
+
       axios.delete(url)
         .then(() => {
           alert('Profile deleted successfully');
-          navigate('/'); 
+          navigate('/');
         })
         .catch(error => {
           console.error('Error deleting profile:', error);
-          // Display a more specific error message if available
           const errorMessage = error.response?.data?.error || 'Error deleting profile';
           setError(errorMessage);
         });
     }
   };
-
 
   if (error) {
     return <div>{error}</div>;
@@ -222,7 +222,7 @@ const Profile = () => {
                 onChange={handleChange} 
               />
             </div>
-            {accountType === 'Employer' && (
+            {accountType === 'employer' && (
               <div className="form-group">
                 <label htmlFor="companyName">Company Name:</label>
                 <input 
@@ -272,22 +272,12 @@ const Profile = () => {
             <p><strong>Barangay:</strong> {profileData.barangay}</p>
             <p><strong>Zip Code:</strong> {profileData.zipCode}</p>
             <p><strong>Mobile Number:</strong> {profileData.mobileNumber}</p>
-            {accountType === 'Employer' && (
+            {accountType === 'employer' && (
               <p><strong>Company Name:</strong> {profileData.companyName}</p>
-            )}
-            {profileData.picture && (
-              <div className="profile-picture">
-                <img src={`http://localhost:8081/uploads/${profileData.picture}`} alt="Profile" />
-              </div>
-            )}
-            {profileData.resume && (
-              <div className="profile-resume">
-                <a href={`http://localhost:8081/uploads/${profileData.resume}`} download>Download Resume</a>
-              </div>
             )}
             <div className="button-group">
               <button onClick={handleEditToggle}>Edit</button>
-              <button onClick={handleDelete} className="delete-button">Delete Profile</button>
+              <button onClick={handleDelete}>Delete Profile</button>
             </div>
           </>
         )}

@@ -22,7 +22,7 @@ app.use(cookieParser());
 const db = mysql.createConnection({
   host: "localhost",
   user: 'root',
-  password: '1234',
+  password: 'root',
   database: 'mydb'
 });
 
@@ -138,7 +138,6 @@ app.post('/signup', upload.fields([{ name: 'picture', maxCount: 1 }, { name: 're
 });
 
 
-
 // Login route with JWT and bcrypt
 app.post('/login', (req, res) => {
   const { email, password } = req.body;
@@ -154,7 +153,7 @@ app.post('/login', (req, res) => {
       bcrypt.compare(password, employee.password, (err, isMatch) => {
         if (err) return res.status(500).json({ error: 'Internal error' });
         if (isMatch) {
-          const token = jwt.sign({ name: employee.email, userType: employee.userType }, "our-jsonwebtoken-secret-key", { expiresIn: '1d' });
+          const token = jwt.sign({ name: employee.email, userType: employee.userType, userId: employee.userId }, "our-jsonwebtoken-secret-key", { expiresIn: '1d' });
           res.cookie('token', token, { httpOnly: true, maxAge: 24 * 60 * 60 * 1000 }); // 1 day expiry
 
           return res.json({ message: 'Login successful', userType: employee.userType, userId: employee.userId });
@@ -176,7 +175,7 @@ app.post('/login', (req, res) => {
         bcrypt.compare(password, employer.password, (err, isMatch) => {
           if (err) return res.status(500).json({ error: 'Internal error' });
           if (isMatch) {
-            const token = jwt.sign({ name: employer.email, userType: employer.userType }, "our-jsonwebtoken-secret-key", { expiresIn: '1d' });
+            const token = jwt.sign({ name: employer.email, userType: employer.userType, userId: employer.userId }, "our-jsonwebtoken-secret-key", { expiresIn: '1d' });
             res.cookie('token', token, { httpOnly: true, maxAge: 24 * 60 * 60 * 1000 });
 
             return res.json({ message: 'Login successful', userType: employer.userType, userId: employer.userId });
@@ -190,6 +189,22 @@ app.post('/login', (req, res) => {
     });
   });
 });
+
+app.get('/verify-session', (req, res) => {
+  const token = req.cookies.token; // Retrieve the token from the cookie
+  if (!token) {
+    return res.status(401).json({ message: 'No token found. Unauthorized access.' });
+  }
+
+  jwt.verify(token, "our-jsonwebtoken-secret-key", (err, decoded) => {
+    if (err) {
+      return res.status(403).json({ message: 'Token verification failed. Forbidden access.' });
+    }
+    return res.json({ message: 'Authenticated', userType: decoded.userType, userId: decoded.userId });
+  });
+});
+
+
 
 app.post('/api/job_postings/AddJobPosting', (req, res) => {
   const { jobName, jobOverview, jobDescription, salary, country } = req.body;
@@ -208,7 +223,7 @@ app.post('/api/job_postings/AddJobPosting', (req, res) => {
       console.error('Error inserting job posting:', err);
       return res.status(500).json({ error: 'Database error', details: err.message });
     }
-    res.status(201).json({ message: 'Job posting created successfully', id: results.insertId });
+    res.status(201).json({ message: 'Job posting created successfully', job_id: results.insertId });
   });
 });
 
@@ -239,11 +254,52 @@ app.delete('/api/:accountType/:id', (req, res) => {
   });
 });
 
-// Route to get user profile by employee_id or employer_id
+app.get('/api/users', (req, res) => {
+  const employeeQuery = `
+    SELECT employee_id AS id, lastName, firstName, middleName, province, municipality, barangay, 
+           zipCode, mobileNumber, picture, resume, status_id AS statusId, progress_id AS progressId, 
+           email, 'Employee' AS userType
+    FROM employee
+  `;
+
+  const employerQuery = `
+    SELECT employer_id AS id, lastName, firstName, middleName, province, municipality, barangay, 
+           zipCode, mobileNumber, companyName, status_id AS statusId, progress_id AS progressId, 
+           email, 'Employer' AS userType
+    FROM employer
+  `;
+
+  db.query(employeeQuery, (err, employeeResults) => {
+    if (err) return res.status(500).json({ error: 'Database error', details: err.message });
+
+    db.query(employerQuery, (err, employerResults) => {
+      if (err) return res.status(500).json({ error: 'Database error', details: err.message });
+
+      // Combine employee and employer data
+      const users = [...employeeResults, ...employerResults];
+      res.json(users);
+    });
+  });
+});
+
+
+// Route to get user profile by user_id (employee or employer)
 app.get('/api/users/:userId', (req, res) => {
   const { userId } = req.params;
 
-  const employeeQuery = 'SELECT employee_id, lastName, firstName, middleName, province, municipality, barangay, zipCode, mobileNumber, picture, resume, "employee" AS userType FROM employee WHERE employee_id = ?';
+  const employeeQuery = `
+    SELECT employee_id AS id, lastName, firstName, middleName, province, municipality, barangay, 
+           zipCode, mobileNumber, picture, resume, 'employee' AS userType 
+    FROM employee 
+    WHERE employee_id = ?`;
+
+  const employerQuery = `
+    SELECT employer_id AS id, lastName, firstName, middleName, province, municipality, barangay, 
+           zipCode, mobileNumber, companyName, 'employer' AS userType 
+    FROM employer 
+    WHERE employer_id = ?`;
+
+  // First, try to find the user as an employee
   db.query(employeeQuery, [userId], (err, employeeResults) => {
     if (err) {
       return res.status(500).json({ error: 'Database error', details: err.message });
@@ -253,7 +309,7 @@ app.get('/api/users/:userId', (req, res) => {
       return res.json(employeeResults[0]);
     }
 
-    const employerQuery = 'SELECT employer_id, lastName, firstName, middleName, province, municipality, barangay, zipCode, mobileNumber, companyName, "employer" AS userType FROM employer WHERE employer_id = ?';
+    // If not an employee, try to find the user as an employer
     db.query(employerQuery, [userId], (err, employerResults) => {
       if (err) {
         return res.status(500).json({ error: 'Database error', details: err.message });
@@ -263,10 +319,12 @@ app.get('/api/users/:userId', (req, res) => {
         return res.json(employerResults[0]);
       }
 
+      // If not found in either table, return a 404 error
       res.status(404).json({ error: 'User not found' });
     });
   });
 });
+
 
 
 app.put('/api/users/:userId', upload.fields([{ name: 'picture', maxCount: 1 }, { name: 'resume', maxCount: 1 }]), (req, res) => {
@@ -327,11 +385,90 @@ app.put('/api/users/:userId', upload.fields([{ name: 'picture', maxCount: 1 }, {
   });
 });
 
+// Route to get all job postings
+app.get('/api/job_postings', (req, res) => {
+  const sql = 'SELECT * FROM job_postings';
+  db.query(sql, (err, results) => {
+    if (err) return res.status(500).json({ error: 'Database error', details: err.message });
+    res.json(results);
+  });
+});
+
+// Route to get a job posting by ID (continuation from where it was cut off)
+app.get('/api/job_postings/:id', (req, res) => {
+  const { id } = req.params;
+  const sql = 'SELECT * FROM job_postings WHERE job_id = ?';
+  db.query(sql, [id], (err, results) => {
+    if (err) return res.status(500).json({ error: 'Database error', details: err.message });
+    if (results.length === 0) return res.status(404).json({ error: 'Job posting not found' });
+    res.json(results[0]);
+  });
+});
+
+// Route to update a job posting by ID
+app.put('/api/job_postings/:id', (req, res) => {
+  const { id } = req.params;
+  const { jobName, jobOverview, jobDescription, salary, country } = req.body;
+
+  const sql = `UPDATE job_postings SET 
+               jobName = COALESCE(?, jobName), 
+               jobOverview = COALESCE(?, jobOverview), 
+               jobDescription = COALESCE(?, jobDescription), 
+               salary = COALESCE(?, salary), 
+               country = COALESCE(?, country) 
+               WHERE job_id = ?`;
+
+  const values = [jobName, jobOverview, jobDescription, salary, country, job_id];
+  db.query(sql, values, (err, results) => {
+    if (err) return res.status(500).json({ error: 'Database error', details: err.message });
+    if (results.affectedRows === 0) return res.status(404).json({ error: 'Job posting not found' });
+    res.json({ message: 'Job posting updated successfully' });
+  });
+});
+
+// Route to delete a job posting by ID
+app.delete('/api/job_postings/:id', (req, res) => {
+  const { id } = req.params;
+  const sql = 'DELETE FROM job_postings WHERE job_id = ?';
+  db.query(sql, [id], (err, results) => {
+    if (err) return res.status(500).json({ error: 'Database error', details: err.message });
+    if (results.affectedRows === 0) return res.status(404).json({ error: 'Job posting not found' });
+    res.json({ message: 'Job posting deleted successfully' });
+  });
+});
+
+
 // Sign-out route to clear the JWT token
 app.post('/signout', (req, res) => {
   res.clearCookie('token');
   res.status(200).json({ message: 'Sign out successful' });
 })
+
+// Apply for a job
+app.post('/api/applications/apply', verifyUser, (req, res) => {
+  // Get job_id from the request body and the employee's ID from the decoded token (req.name contains the logged-in user's email)
+  const { job_id } = req.body;
+  const employee_id = req.name; // Assuming req.name contains the logged-in employee's email or userId
+
+  if (!job_id || !employee_id) {
+    return res.status(400).json({ error: 'Job ID and Employee ID are required' });
+  }
+
+  const apply_date = new Date().toISOString().slice(0, 19).replace('T', ' '); // Get current date in 'YYYY-MM-DD HH:MM:SS' format
+
+  // Insert application into the 'applications' table
+  const sql = 'INSERT INTO applications (job_id, employee_id, apply_date) VALUES (?, ?, ?)';
+  const values = [job_id, employee_id, apply_date];
+
+  db.query(sql, values, (err, results) => {
+    if (err) {
+      console.error('Error inserting application:', err);
+      return res.status(500).json({ error: 'Database error', details: err.message });
+    }
+
+    res.status(201).json({ message: 'Application submitted successfully', applicationId: results.insertId });
+  });
+});
 
 // Start the server
 const PORT = process.env.PORT || 8081;

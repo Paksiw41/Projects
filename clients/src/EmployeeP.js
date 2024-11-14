@@ -1,48 +1,54 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
-import './App.css'; // Keep the same CSS styling as App.js
+import './App.css';
 import logo from './assets/images/logo4.png';
+import Profile from './profile/Profile';
+import SignOut from './Sign in/SignOut';
 
-const EmployeeP = () => {
-  const [auth, setAuth] = useState(false);
-  const [name, setName] = useState('');
-  const [message, setMessage] = useState('');
+const EmployeeP = ({ onSignOut, auth }) => {
+  const [profileData, setProfileData] = useState(null); // State for profile data
+  const [name, setName] = useState(''); // User name from authentication response
+  const [message, setMessage] = useState(''); // Message for authentication status
+  const { id: userId } = useParams(); // Get userId from route parameters
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check if user is authenticated
-    axios.defaults.withCredentials = true;
-    axios.get('http://localhost:8081/') // Backend is on port 8081
-      .then(res => {
-        if (res.data.Status === "Success") {
-          setAuth(true);
-          setName(res.data.name);
-        } else {
-          setAuth(false);
-          setMessage(res.data.Message || 'Not authenticated');
+    const fetchProfile = async () => {
+      try {
+        const response = await fetch(`http://localhost:8081/api/users/${userId}`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('authToken')}`
+          }
+        });
+    
+        if (!response.ok) {
+          throw new Error(`Failed to fetch profile: ${response.statusText}`);
         }
-      })
-      .catch(err => console.log(err));
-  }, []);
+    
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error("Expected JSON, but received a non-JSON response");
+        }
+    
+        const data = await response.json();
+        setProfileData(data);
+      } catch (error) {
+        console.error("Error fetching profile:", error);
+      }
+    };
+    
 
-  const handleDelete = () => {
-    axios.get('http://localhost:8081/signout') // Backend signout route
-      .then(res => {
-        if (res.status === 200) {
-          setAuth(false); // Update auth state
-          navigate('/'); // Redirect to home or login page
-          window.location.reload(true); // Reload the page to reset state
-        } else {
-          console.error('Failed to sign out');
-        }
-      })
-      .catch(err => console.error('Error signing out:', err));
-  };
+    if (userId) {
+      fetchProfile();
+    }
+  }, [userId]);
+
+  console.log("Auth:", auth, "User ID:", userId);
 
   return (
-    <div className="employer-page-container">
-      {/* Custom header for the employer page */}
+    <div className="employee-page-container">
+      {/* Custom header for the employee page */}
       <header className="navbar-App">
         <img src={logo} alt="Logo" className="logo-App" />
         <nav>
@@ -51,15 +57,17 @@ const EmployeeP = () => {
             <li><a href="#vision">VISION</a></li>
             <li><a href="#mission">MISSION</a></li>
             <li><Link to="/view-job">View Job Posting</Link></li>
+            {auth && userId && (
+              <li><Link to={`/profile/${userId}/employee`}>Profile</Link></li> // Added /employee as accountType
+              )}
           </ul>
         </nav>
         <div className="button2">
-          {/* Replace the Sign In button with Sign Out */}
-          <button className="sign-out-App" onClick={handleDelete}>SIGN OUT</button>
+        <SignOut onSignOut={onSignOut} />
         </div>
       </header>
 
-      {/* Main content for the employer page */}
+      {/* Main content for the employee page */}
       <main className="content-App">
         <div className="text-section-App">
           <h1 className="company-name-App">MMML</h1>
@@ -75,6 +83,11 @@ const EmployeeP = () => {
         <div className="image-section-App">
           <img src="woman-smiling.png" alt="Smiling Woman" className="main-image-App" />
         </div>
+
+        {/* Display profile information if available */}
+        {profileData && (
+          <Profile profileData={profileData} />
+        )}
       </main>
     </div>
   );
